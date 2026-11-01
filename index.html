@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArgonMine Monitor — luna404</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0b0f14;color:#e8eef4;padding:16px}
+  h1{font-size:20px;margin:0 0 4px} .sub{color:#8fa3b3;font-size:13px;margin-bottom:16px;word-break:break-all}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .card{background:#141b24;border:1px solid #22303e;border-radius:14px;padding:14px}
+  .card b{font-size:22px;display:block;margin-top:4px} .card span{color:#8fa3b3;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#2fbf71;vertical-align:middle;margin-right:6px}
+  .dot.off{background:#e5484d}
+  input{width:100%;padding:10px;border-radius:10px;border:1px solid #22303e;background:#0f1620;color:#e8eef4;font-size:13px;margin:12px 0}
+  button{padding:10px 16px;border:0;border-radius:10px;background:#ffb224;color:#111;font-weight:700;cursor:pointer}
+  canvas{width:100%;height:120px;background:#0f1620;border:1px solid #22303e;border-radius:14px;margin-top:12px}
+  .foot{color:#8fa3b3;font-size:12px;margin-top:14px;line-height:1.6}
+  .err{color:#ff8a8a;font-size:13px}
+</style>
+</head>
+<body>
+<h1>⛏️ ArgonMine Monitor</h1>
+<div class="sub">Live dari pool API ArgonMine (refresh tiap 15 detik). Data pool adalah yang resmi — kalau miner di VM berhenti, share terakhir akan menua di sini.</div>
+
+<label style="font-size:13px;color:#8fa3b3">Alamat miner (arg1…)</label>
+<input id="addr" value="arg1qeq0txcyau84f8ts5auk8mnpuazqpaf2dh6e997xklas709wdajjq3r098j">
+<button onclick="saveAddr()">Pantau alamat ini</button>
+<span id="status" style="margin-left:8px;font-size:13px"><span class="dot"></span>menghubungkan…</span>
+
+<div class="grid" style="margin-top:16px">
+  <div class="card"><span>Hashrate kamu (pool)</span><b id="myhr">—</b></div>
+  <div class="card"><span>Round shares kamu</span><b id="myshares">—</b></div>
+  <div class="card"><span>Bagian round</span><b id="sharepct">—</b></div>
+  <div class="card"><span>Saldo pool</span><b id="bal">—</b></div>
+  <div class="card"><span>Pending</span><b id="pend">—</b></div>
+  <div class="card"><span>Sudah dibayar</span><b id="paid">—</b></div>
+  <div class="card"><span>Share terakhir</span><b id="lastshare">—</b></div>
+  <div class="card"><span>Pool hashrate</span><b id="poolhr">—</b></div>
+  <div class="card"><span>Miner di pool</span><b id="miners">—</b></div>
+  <div class="card"><span>Estimasi blok berikut</span><b id="expblock">—</b></div>
+  <div class="card"><span>Round pool</span><b id="roundpct">—</b></div>
+  <div class="card"><span>Fee / min payout</span><b id="fee">—</b></div>
+</div>
+
+<canvas id="chart" width="600" height="120"></canvas>
+<div class="foot" id="foot">Terakhir update: — · refresh berikutnya dalam <span id="cd">15</span> detik · 1 ARG = 100.000.000 unit pool · saldo dibayar setelah blok matang (100 konfirmasi), min payout 0,1 ARG.</div>
+<div class="err" id="err"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+let addr=localStorage.getItem('argon_addr')||$('addr').value;
+$('addr').value=addr;
+let hist=[];
+function saveAddr(){addr=$('addr').value.trim();localStorage.setItem('argon_addr',addr);tick();}
+function fmt(n,d=2){return n.toLocaleString('id-ID',{maximumFractionDigits:d});}
+function ago(ts){let s=Math.floor(Date.now()/1000)-ts;if(s<60)return s+' detik lalu';if(s<3600)return Math.floor(s/60)+' menit lalu';return Math.floor(s/3600)+' jam lalu';}
+function draw(){
+  const c=$('chart'),x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);
+  if(hist.length<2)return;let mx=Math.max(...hist,1);
+  x.strokeStyle='#ffb224';x.lineWidth=2;x.beginPath();
+  hist.forEach((v,i)=>{let px=i/(59)*c.width,py=c.height-(v/mx)*(c.height-16)-8;i?x.lineTo(px,py):x.moveTo(px,py);});
+  x.stroke();x.fillStyle='#8fa3b3';x.font='11px sans-serif';x.fillText('Hashrate kamu (H/s) — 60 titik terakhir',8,14);
+}
+async function tick(){
+  try{
+    const [m,p]=await Promise.all([
+      fetch('https://explorer.argonmine.com/api/pool/miner/'+encodeURIComponent(addr)).then(r=>r.json()),
+      fetch('https://explorer.argonmine.com/api/pool/stats').then(r=>r.json())
+    ]);
+    $('err').textContent='';
+    $('myhr').textContent=fmt(m.hashrate,1)+' H/s';
+    $('myshares').textContent=fmt(m.round_shares,0);
+    $('sharepct').textContent=m.round_total?fmt(m.round_shares/m.round_total*100,5)+'%':'—';
+    $('bal').textContent=fmt(m.balance/1e8,4)+' ARG';
+    $('pend').textContent=fmt(m.pending/1e8,4)+' ARG';
+    $('paid').textContent=fmt(m.paid/1e8,4)+' ARG';
+    $('lastshare').textContent=ago(m.last_share);
+    $('poolhr').textContent=fmt(p.hashrate,0)+' H/s';
+    $('miners').textContent=fmt(p.miners,0);
+    $('expblock').textContent=Math.round(p.expected_seconds/60)+' menit';
+    $('roundpct').textContent=fmt(p.round_percent,1)+'%';
+    $('fee').textContent=p.fee_percent+'% / '+(p.min_payout/1e8)+' ARG';
+    let age=Math.floor(Date.now()/1000)-m.last_share;
+    $('status').innerHTML=(age<180?'<span class="dot"></span>LIVE — share terakhir '+ago(m.last_share):'<span class="dot off"></span>DIAM — share terakhir '+ago(m.last_share)+' (miner mungkin berhenti)');
+    $('foot').innerHTML='Terakhir update: '+new Date().toLocaleString('id-ID')+' · refresh berikutnya dalam <span id="cd">15</span> detik · 1 ARG = 100.000.000 unit pool · saldo dibayar setelah blok matang (100 konfirmasi), min payout 0,1 ARG.';
+    hist.push(m.hashrate);if(hist.length>60)hist.shift();draw();
+  }catch(e){$('err').textContent='Gagal ambil data pool: '+e.message+' — coba refresh halaman.';}
+}
+let cd=15;tick();
+setInterval(()=>{cd--;let el=$('cd');if(el)el.textContent=cd;if(cd<=0){cd=15;tick();}},1000);
+</script>
+</body>
+</html>
